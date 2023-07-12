@@ -1,16 +1,26 @@
 use crate::device::{Device, SmartSocket, SmartThermometer};
 use crate::room::Room;
 use std::collections::HashMap;
+use std::fmt::Display;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct SmartHome {
+    pub id: Uuid,
     pub name: String,
-    pub rooms: HashMap<String, Room>,
+    pub rooms: HashMap<Uuid, Room>,
+}
+
+impl Display for SmartHome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}\nHome: {}", &self.id, &self.name)
+    }
 }
 
 impl SmartHome {
     pub fn new(name: String) -> Self {
         SmartHome {
+            id: Uuid::new_v4(),
             name,
             rooms: HashMap::new(),
         }
@@ -21,13 +31,13 @@ impl SmartHome {
         self.rooms.values().collect()
     }
 
-    pub fn add_room(&mut self, room: Room) -> Option<Room> {
-        self.rooms.insert(room.name.clone(), room)
+    pub fn add_room(&mut self, room: Room) {
+        self.rooms.insert(room.id, room);
     }
 
-    pub fn devices(&self, room: &str) -> Option<Vec<&Device>> {
+    pub fn devices(&self, room_id: &Uuid) -> Option<Vec<&Device>> {
         // Метод для попучения списка девайсов в комнате
-        if let Some(target_room) = self.rooms.get(room) {
+        if let Some(target_room) = self.rooms.get(room_id) {
             let devices: Vec<&Device> = target_room.devices.values().collect();
             Some(devices)
         } else {
@@ -39,57 +49,44 @@ impl SmartHome {
         // Метод для формирования отчета в доме по комнатам и устройствам
         let mut report = String::new();
 
-        report.push_str(&format!("Home: {}\n", &self.name));
+        report.push_str(&format!("{}\n", &self));
         for room in &self.get_rooms() {
-            report.push_str(&format!("Room: {}\n", room.name));
-            if let Some(devices) = self.devices(&room.name) {
+            if let Some(devices) = self.devices(&room.id) {
                 for device in devices.iter() {
-                    if let Some(device_info) = provider.get_device_info(&room.name, &device.name) {
-                        report.push_str(&format!("Device: {}\n", device.name));
-                        report.push_str(&format!("State: {}\n", device_info));
-                    } else {
-                        report.push_str(&format!("Device not found: {}\n", device.name));
-                    }
+                    report.push_str(&format!("{}\n", provider.get_device_info(room, device)));
                 }
                 report.push('\n');
+            } else {
+                report.push_str("В данной комнате нет девайсов")
             }
         }
-
         report
     }
 }
 
 pub trait DeviceInfoProvider {
-    fn get_device_info(&self, room: &str, device: &str) -> Option<String>;
+    fn get_device_info(&self, room: &Room, device: &Device) -> String {
+        let mut report = format!("{}\n", room);
+        match device {
+            Device::Socket(s) => report.push_str(&format!("{}\n", s)),
+            Device::Thermometer(s) => report.push_str(&format!("{}\n", s)),
+        }
+        report
+    }
 }
 
 pub struct OwningDeviceInfoProvider {
     pub socket: SmartSocket,
 }
 
-impl DeviceInfoProvider for OwningDeviceInfoProvider {
-    fn get_device_info(&self, _room: &str, device: &str) -> Option<String> {
-        match device {
-            "socket" => Some(self.socket.get_state()),
-            _ => None,
-        }
-    }
-}
+impl DeviceInfoProvider for OwningDeviceInfoProvider {}
 
 pub struct BorrowingDeviceInfoProvider<'a, 'b> {
     pub socket: &'a SmartSocket,
     pub thermo: &'b SmartThermometer,
 }
 
-impl<'a, 'b> DeviceInfoProvider for BorrowingDeviceInfoProvider<'a, 'b> {
-    fn get_device_info(&self, _room: &str, device: &str) -> Option<String> {
-        match device {
-            "socket" => Some(self.socket.get_state()),
-            "thermometer" => Some(self.thermo.get_temperature()),
-            _ => None,
-        }
-    }
-}
+impl<'a, 'b> DeviceInfoProvider for BorrowingDeviceInfoProvider<'a, 'b> {}
 
 #[cfg(test)]
 mod tests {
@@ -124,30 +121,29 @@ mod tests {
 
     #[test]
     fn smarthome_room_get_devices() {
-        let device = Device::new(String::from("Socket"));
+        let socket = SmartSocket::new(String::from("Socket"));
         let mut room = Room::new(String::from("My Room"));
 
-        room.add_device(device);
+        room.add_device(Device::Socket(socket));
 
         let mut house = SmartHome::new(String::from("My Dom"));
         house.add_room(room.clone());
 
-        let devices = house.devices(&room.name).unwrap();
+        let devices = house.devices(&room.id).unwrap();
 
         assert_eq!(devices.len(), 1);
     }
 
     #[test]
     fn smarthome_create_report_owning() {
-        let device = Device::new(String::from("Socket"));
+        let socket = SmartSocket::new(String::from("My Socket"));
         let mut room = Room::new(String::from("My Room"));
 
-        room.add_device(device);
+        room.add_device(Device::Socket(socket.clone()));
 
         let mut house = SmartHome::new(String::from("My Dom"));
         house.add_room(room.clone());
 
-        let socket = SmartSocket {};
         let info_provider = OwningDeviceInfoProvider { socket };
 
         let report = house.create_report(&info_provider);
@@ -157,19 +153,16 @@ mod tests {
 
     #[test]
     fn smarthome_create_report_borrowing() {
-        let device1 = Device::new(String::from("socket"));
-        let device2 = Device::new(String::from("thermometer"));
+        let socket = SmartSocket::new(String::from("My Socket"));
+        let thermo = SmartThermometer::new(String::from("My Thermometer"), 12.9);
 
         let mut room = Room::new(String::from("My Room"));
 
-        room.add_device(device1);
-        room.add_device(device2);
+        room.add_device(Device::Socket(socket.clone()));
+        room.add_device(Device::Thermometer(thermo.clone()));
 
         let mut house = SmartHome::new(String::from("My Dom"));
         house.add_room(room.clone());
-
-        let socket = SmartSocket {};
-        let thermo = SmartThermometer {};
 
         let info_provider = BorrowingDeviceInfoProvider {
             socket: &socket,

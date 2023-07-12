@@ -1,27 +1,41 @@
 use super::device::Device;
 use std::collections::HashMap;
+use std::fmt::Display;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct Room {
+    pub id: Uuid,
     pub name: String,
-    pub devices: HashMap<String, Device>,
+    pub devices: HashMap<Uuid, Device>,
 }
 
 impl Room {
     pub fn new(name: String) -> Self {
-        Room {
+        Self {
+            id: Uuid::new_v4(),
             name,
             devices: HashMap::new(),
         }
     }
 
-    pub fn add_device(&mut self, device: Device) -> Option<Device> {
-        self.devices.insert(device.name.clone(), device)
+    pub fn add_device(&mut self, device: Device) {
+        if let Some(id) = device.get_id() {
+            self.devices.insert(id, device);
+        }
+    }
+}
+
+impl Display for Room {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "id: {}\nRoom: {}", &self.id, &self.name)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::device::SmartSocket;
+
     use super::*;
 
     #[test]
@@ -33,10 +47,10 @@ mod tests {
 
     #[test]
     fn add_devicein_room() {
-        let device = Device::new(String::from("My Device"));
+        let socket = SmartSocket::new(String::from("My Socket"));
 
         let mut room = Room::new(String::from("My Room"));
-        room.add_device(device);
+        room.add_device(Device::Socket(socket));
 
         assert_eq!(room.devices.len(), 1);
     }

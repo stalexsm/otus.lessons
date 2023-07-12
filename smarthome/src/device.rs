@@ -1,25 +1,99 @@
+use rand;
+use std::fmt::Display;
+use uuid::Uuid;
+
 #[derive(Clone)]
-pub struct Device {
-    pub name: String,
+pub enum Device {
+    Socket(SmartSocket),
+    Thermometer(SmartThermometer),
 }
 
 impl Device {
-    pub fn new(name: String) -> Self {
-        Device { name }
+    pub fn get_id(&self) -> Option<Uuid> {
+        match self {
+            Device::Socket(socket) => Some(socket.id),
+            Device::Thermometer(thermometer) => Some(thermometer.id),
+        }
     }
 }
 
-pub struct SmartSocket {}
+#[derive(Clone)]
+pub struct SmartSocket {
+    id: Uuid,
+    name: String,
+    state: bool,
+    power: f64,
+}
+
 impl SmartSocket {
-    pub fn get_state(&self) -> String {
-        String::from("On")
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            state: false,
+            power: 0.0,
+        }
+    }
+
+    pub fn switch(&mut self, state: bool) {
+        self.state = state;
+
+        if self.state {
+            self.power = (rand::random::<f64>() * 100.0).round() / 100.0
+        } else {
+            self.power = 0.0
+        }
     }
 }
 
-pub struct SmartThermometer {}
+impl From<SmartSocket> for Device {
+    fn from(value: SmartSocket) -> Self {
+        Device::Socket(value)
+    }
+}
+
+impl Display for SmartSocket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "id: {}\nSmartSocket: {}, State: {}, Power: {}",
+            &self.id,
+            &self.name,
+            if self.state { "On" } else { "Off" },
+            &self.power
+        )
+    }
+}
+
+#[derive(Clone)]
+pub struct SmartThermometer {
+    id: Uuid,
+    name: String,
+    temperature: f64,
+}
 impl SmartThermometer {
-    pub fn get_temperature(&self) -> String {
-        String::from("25°C")
+    pub fn new(name: String, temperature: f64) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            temperature,
+        }
+    }
+}
+
+impl From<SmartThermometer> for Device {
+    fn from(value: SmartThermometer) -> Self {
+        Device::Thermometer(value)
+    }
+}
+
+impl Display for SmartThermometer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "id: {}\nSmartThermometer: {}, temperature: {}°C",
+            &self.id, &self.name, &self.temperature
+        )
     }
 }
 
@@ -29,22 +103,22 @@ mod tests {
 
     #[test]
     fn create_device() {
-        let device = Device::new(String::from("My Device"));
-
-        assert_eq!(device.name, "My Device");
+        let device = SmartSocket::new(String::from("My Socket"));
+        assert_eq!(device.name, "My Socket");
     }
 
     #[test]
     fn get_temperature_in_thermo() {
-        let device = SmartThermometer {};
+        let thermo = SmartThermometer::new(String::from("My Thermometer"), 23.4);
 
-        assert_eq!(device.get_temperature(), "25°C");
+        assert_eq!(thermo.name, "My Thermometer");
     }
 
     #[test]
-    fn get_state_in_socket() {
-        let device = SmartSocket {};
+    fn socket_state_on() {
+        let mut socket = SmartSocket::new(String::from("My Socket"));
+        socket.switch(true);
 
-        assert_eq!(device.get_state(), "On");
+        assert_eq!(socket.state, true);
     }
 }
